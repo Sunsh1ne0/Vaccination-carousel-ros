@@ -43,7 +43,7 @@ def callbackSpeed(msg):
     # rospy.loginfo(f"Speed is {msg}")
     currentSpeed = msg.data
     try:
-        fullDict['currentSpeed'] = abs(currentSpeed)
+        fullDict['currentSpeed'] = round(abs(currentSpeed), 2)
         # with open(config, 'w') as file:
         #     yaml.dump(fullDict, file, allow_unicode=True, default_flow_style=False)
     except:
