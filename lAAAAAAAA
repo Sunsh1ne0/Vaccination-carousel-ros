@@ -1,0 +1,61 @@
+FROM ros:melodic-ros-base-bionic
+
+RUN sudo apt-get update && \
+    sudo apt-get install -y cmake && \
+    sudo apt install -y python-pip &&\
+    pip install pyyaml
+
+RUN echo "source /opt/ros/melodic/setup.bash" >> ~/.bashrc && \
+    bash ros_entrypoint.sh && \
+    mkdir -p root/catkin_ws/src
+
+WORKDIR /root/catkin_ws/src
+RUN /bin/bash -c 'source /opt/ros/melodic/setup.bash; catkin_init_workspace /root/catkin_ws/src'
+RUN rosdep install --from-paths ./ --ignore-src --rosdistro melodic -y
+
+WORKDIR /root/catkin_ws
+RUN /bin/bash -c 'source /opt/ros/melodic/setup.bash; catkin_make; source /root/catkin_ws/devel/setup.bash' && \
+    # source /root/catkin_ws/devel/setup.bash &&\
+    echo "source /root/catkin_ws/devel/setup.bash" >> ~/.bashrc
+
+WORKDIR /root/catkin_ws/src
+RUN /bin/bash -c "source /root/catkin_ws/devel/setup.bash; catkin_create_pkg config_manager rospy std_msgs"
+
+WORKDIR /root/catkin_ws
+RUN /bin/bash -c 'source /opt/ros/melodic/setup.bash; catkin_make; source /root/catkin_ws/devel/setup.bash'
+    
+
+
+# WORKDIR /root/catkin_ws
+# RUN /bin/bash -c "source /opt/ros/melodic/setup.bash; catkin_make" && \
+#     echo "source /root/catkin_ws/devel/setup.bash" >> ~/.bashrc &&\
+#     mkdir ./src/config_manager/scripts
+
+RUN mkdir -p /root/catkin_ws/src/config_manager/scripts
+
+COPY config_manager.py /root/catkin_ws/src/config_manager/scripts
+
+RUN /bin/bash -c "source /opt/ros/melodic/setup.bash; chmod +x /root/catkin_ws/src/config_manager/scripts/config_manager.py"
+
+RUN rm /root/catkin_ws/src/config_manager/CMakeLists.txt
+
+COPY CMakeLists.txt /root/catkin_ws/src/config_manager
+
+RUN mkdir -p /home/ubuntu/web/carousel_backend
+
+# RUN /bin/bash -c "source /opt/ros/melodic/setup.bash; cd /root/catkin_ws; catkin_make"
+#     # echo "source /root/catkin_ws/devel/setup.bash" >> ~/.bashrc
+
+WORKDIR /
+RUN  sudo printf "#!/bin/bash  \n\
+    set -e  \n\
+    # setup ros environment  \n\
+    source "/opt/ros/$ROS_DISTRO/setup.bash" --  \n\
+    source /root/catkin_ws/devel/setup.bash \n\
+    exec "$@"" > ros_entrypoint.sh
+
+ENTRYPOINT ["/ros_entrypoint.sh"]
+
+CMD ["rosrun", "config_manager", "config_manager.py"]
+# CMD ["roscore"]
+# CMD ["python", "/root/catkin_ws/src/config_manager/scripts/config_manager.py"]

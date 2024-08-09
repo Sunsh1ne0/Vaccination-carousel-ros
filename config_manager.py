@@ -124,7 +124,7 @@ class ConfigManager:
             self.vac_pos_1_pub.publish(vac_pos_1)
             self.vac_pos_2_pub.publish(vac_pos_2)
             self.pusher_pub.publish(pusher_options[pusher])
-            print('out')
+            # print('out')
 
             rospy.loginfo("Configuration sent successfully")
         
