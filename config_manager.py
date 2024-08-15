@@ -4,20 +4,139 @@
 import rospy
 from std_msgs.msg import Int32, Float32
 import yaml
+import psycopg2
+from datetime import datetime
 
 rospy.init_node('config_manager', anonymous=True)
 rate = rospy.Rate(5)
 config = '/home/ubuntu/web/carousel_backend/config.yaml'
 fullDict = {}
+fullDictOffset = {}
+
+def connect_to_db():
+    global conn
+    try:
+    # пытаемся подключиться к базе данных
+        conn = psycopg2.connect(dbname='carousel_db', user='postgres', password='Robot123', host="10.5.0.5", port="5432")
+        print("Connecting to carousel")
+        return 0
+    except:
+        # в случае сбоя подключения будет выведено сообщение
+        print('Can`t establish connection to database')
+        conn = None
+        return 1
+
+def init_tables():
+    try:
+        if conn:
+            with conn.cursor() as curs:
+                curs.execute("SELECT * from information_schema.tables where table_name=%s", ('carousel_stats',))
+                if not bool(curs.rowcount):
+                    curs.execute('CREATE TABLE carousel_stats (id Serial, timestamp TIMESTAMP, current_speed float8, dropsAmount INT, rotationAmount INT, vaccinationAmount1 INT, vaccinationAmount2 INT, startFlag boolean, sessionFlag boolean)')
+                    conn.commit()
+                curs.execute("SELECT * from information_schema.tables where table_name=%s", ('carousel_settings',))
+                if not bool(curs.rowcount):
+                    curs.execute('CREATE TABLE carousel_settings (id Serial, timestamp TIMESTAMP, rotDir text, targetSpeed float8, vacPos1 INT, vacPos2 INT, pusher text)')
+                    curs.execute('INSERT INTO carousel_settings (timestamp, rotDir, targetSpeed, vacPos1, vacPos2, pusher) VALUES (%s, %s, %s, %s, %s, %s)', (datetime.now(), 'Counterclockwise', 1.8, 2, 3, 'Drop all'))
+                    conn.commit()
+            return 0
+        return 'NO CONNECTION (INITIALIZE)'
+    except:
+        return 1
+
+def update_settings(rotDir, targetSpeed, vacPos1, vacPos2, pusher):
+    try:
+        print(conn)
+        if conn:
+            with conn.cursor() as curs:
+                curs.execute('UPDATE carousel_settings SET timestamp = %s, rotDir = %s, targetSpeed = %s, vacPos1 = %s, vacPos2 = %s, pusher = %s WHERE id = %s', (datetime.now(), rotDir, targetSpeed, vacPos1, vacPos2, pusher, 1))
+                conn.commit()
+                return 0
+        return 'NO CONNECTION (UPDATE SETTINGS)'
+    except:
+        return 1
+    
+def update_stats(currentSpeed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag):
+    try:
+        if conn:
+            with conn.cursor() as curs:
+                curs.execute('INSERT INTO carousel_stats (timestamp, current_speed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)', (datetime.now(), currentSpeed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag))
+                conn.commit()
+                return 0
+        return 'NO CONNECTION (UPDATE STATS)'
+    except:
+        return 1
+    
+def read_stats():
+    try:
+        if conn:
+            with conn.cursor() as curs:
+                curs.execute('SELECT * FROM carousel_stats ORDER BY id DESC LIMIT 1')
+                rows = curs.fetchall()
+                return rows
+        return 'NO CONNECTION (READ STATS)'
+    except:
+        return []
+
+def read_settings():
+    try:
+        if conn:
+            with conn.cursor() as curs:
+                curs.execute('SELECT * FROM carousel_settings WHERE id = %s', (1,))
+                rows = curs.fetchall()
+                return rows
+        return 'NO CONNECTION (READ SETTINGS)'
+    except:
+        return []
 
 def loadConfig():
     global config, fullDict
+    
+    tempList = read_settings()[0]
+    fullDict['rotDir'] = tempList[2]
+    fullDict['targetSpeed'] = tempList[3]
+    fullDict['vacPos1'] = tempList[4]
+    fullDict['vacPos2'] = tempList[5]
+    fullDict['pusher'] = tempList[6]
+
+    tempList = read_stats()[0]
+    fullDict['startFlag'] = tempList[7]
+    fullDict['sessionFlag'] = tempList[8]
+
     with open(config, "r") as file:
-        fullDict = yaml.safe_load(file)
-        # print(fullDict)
+        # fullDict = yaml.safe_load(file)
+        print(fullDict)
+    
+connect_to_db()
+init_tables()
 
 if len(fullDict) == 0:
     loadConfig()
+    tempList = read_stats()[0]
+    fullDict['dropsAmount'] = tempList[3]
+    fullDict['rotationAmount'] = tempList[4]
+    fullDict['vaccinationAmount1'] = tempList[5]
+    fullDict['vaccinationAmount2'] = tempList[6]
+    fullDict['startFlag'] = tempList[7]
+    fullDict['sessionFlag'] = tempList[8]
+
+if (fullDict['sessionFlag']):
+    fullDictOffset['dropsAmount'] = fullDict['dropsAmount']
+    fullDictOffset['vaccinationAmount1'] = fullDict['vaccinationAmount1']
+    fullDictOffset['vaccinationAmount2'] = fullDict['vaccinationAmount2']
+    fullDictOffset['rotationAmount'] = fullDict['rotationAmount']
+else:
+    fullDictOffset['dropsAmount'] = 0
+    fullDictOffset['vaccinationAmount1'] = 0
+    fullDictOffset['vaccinationAmount2'] = 0
+    fullDictOffset['rotationAmount'] = 0
+
+fullDict['targetSpeed'] = 1.8
+fullDict['currentSpeed'] = 0
+fullDict['rotationAmount'] = 0
+fullDict['dropsAmount'] = 0
+fullDict['vaccinationAmount1'] = 0
+fullDict['vaccinationAmount2'] = 0
 
 #Stats
 currentSpeed = fullDict['currentSpeed']
@@ -27,58 +146,43 @@ vaccinationAmount1 = fullDict['vaccinationAmount1']
 vaccinationAmount2 = fullDict['vaccinationAmount2']
 
 def callbackDrop(msg):
-    global dropsAmount, config
-    # rospy.loginfo(f"Drop is {msg}")
+    global dropsAmount, fullDict
     dropsAmount = msg.data
     try:
         fullDict['dropsAmount'] = dropsAmount
-        # with open(config, 'w') as file:
-        #     yaml.dump(fullDict, file, allow_unicode=True, default_flow_style=False)
     except:
         None
 
 
 def callbackSpeed(msg):
-    global currentSpeed, config
-    # rospy.loginfo(f"Speed is {msg}")
+    global currentSpeed, fullDict
     currentSpeed = msg.data
     try:
         fullDict['currentSpeed'] = round(abs(currentSpeed), 2)
-        # with open(config, 'w') as file:
-        #     yaml.dump(fullDict, file, allow_unicode=True, default_flow_style=False)
     except:
         None
 
 def callbackRot(msg):
-    global rotationAmount, config
-    # rospy.loginfo(f"Rot is {msg}")
+    global rotationAmount, fullDict
     rotationAmount = msg.data
     try:
         fullDict['rotationAmount'] = rotationAmount
-        # with open(config, 'w') as file:
-        #     yaml.dump(fullDict, file, allow_unicode=True, default_flow_style=False)
     except:
         None
 
 def callbackVac1(msg):
-    global vaccinationAmount1, config
-    # rospy.loginfo(f"vaccinationAmount1 is {msg}")
+    global vaccinationAmount1, fullDict
     vaccinationAmount1 = msg.data
     try:
         fullDict['vaccinationAmount1'] = vaccinationAmount1
-        # with open(config, 'w') as file:
-        #     yaml.dump(fullDict, file, allow_unicode=True, default_flow_style=False)
     except:
         None
 
 def callbackVac2(msg):
-    global vaccinationAmount2, config
-    # rospy.loginfo(f"vaccinationAmount2 is {msg}")
+    global vaccinationAmount2, fullDict
     vaccinationAmount2 = msg.data
     try:
         fullDict['vaccinationAmount2'] = vaccinationAmount2
-        # with open(config, 'w') as file:
-        #     yaml.dump(fullDict, file, allow_unicode=True, default_flow_style=False)
     except:
         None
 
@@ -102,7 +206,7 @@ class ConfigManager:
         try:
             loadConfig()
             if fullDict['startFlag']:
-                if fullDict['rotDir'] == u'Против часовой':
+                if fullDict['rotDir'] == u'Counterclockwise':
                     target_speed = fullDict['targetSpeed']
                 else:
                     target_speed = -fullDict['targetSpeed']
@@ -114,10 +218,10 @@ class ConfigManager:
             pusher = fullDict['pusher']
 
             pusher_options = {
-                u'Без сброса' : 0,
-                u'Сброс всех' : 1,
-                u'Две вакцины' : 2,
-                u'Одна вакцина' :3
+                u'Drop none' : 0,
+                u'Drop all' : 1,
+                u'Two vaccines' : 2,
+                u'One vaccine' :3
             }
 
             self.target_speed_pub.publish(target_speed)
@@ -140,8 +244,8 @@ if __name__ == '__main__':
     while not rospy.is_shutdown():
         try:
             node.sendConfig()
-            with open(config, 'w') as file:
-                yaml.dump(fullDict, file, allow_unicode=True, default_flow_style=False)
+            update_stats(fullDict['currentSpeed'], fullDict['dropsAmount'] + fullDictOffset['dropsAmount'], fullDict['rotationAmount'] + fullDictOffset['rotationAmount'], fullDict['vaccinationAmount1'] + fullDictOffset['vaccinationAmount1'], fullDict['vaccinationAmount2'] + fullDictOffset['vaccinationAmount2'], fullDict['startFlag'], fullDict['sessionFlag'] )
+
             rate.sleep()
         except:
             pass

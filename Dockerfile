@@ -6,7 +6,8 @@ RUN sudo apt-get update && \
     sudo apt-get install -y cmake && \
     sudo apt install -y python-pip &&\
     pip install pyyaml &&\
-    apt install -y python3-pip python3-all-dev python3-rospkg
+    apt install -y python3-pip python3-all-dev python3-rospkg &&\
+    pip install psycopg2
 
 RUN apt-get install -y \
     ros-melodic-rospy \
@@ -81,5 +82,6 @@ ENTRYPOINT ["/ros_entrypoint.sh"]
 # CMD ["rosrun", "config_manager", "config_manager.py"]
 # CMD /bin/bash -c 'source /root/catkin_ws/devel/setup.bash; rosrun config_manager config_manager.py' 
 CMD roscore & \
-    rosrun config_manager config_manager.py && \
+    # rosrun config_manager config_manager.py && \
+    python /root/catkin_ws/src/config_manager/scripts/config_manager.py && \
     wait
