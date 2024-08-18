@@ -12,7 +12,7 @@ RUN sudo apt-get update && \
 RUN apt-get install -y \
     ros-melodic-rospy \
     ros-melodic-rosbash && \
-    sudo apt install -y ros-melodic-roslaunch
+    sudo apt install -y ros-melodic-roslaunch ros-melodic-rostopic
 
 RUN sudo apt install -y python-rosdep python-rosinstall python-rosinstall-generator python-wstool build-essential
 # RUN sudo apt install -y python-rospy

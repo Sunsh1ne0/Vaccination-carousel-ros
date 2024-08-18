@@ -12,6 +12,7 @@ rate = rospy.Rate(5)
 config = '/home/ubuntu/web/carousel_backend/config.yaml'
 fullDict = {}
 fullDictOffset = {}
+sessionPrev = None
 
 def connect_to_db():
     global conn
@@ -30,13 +31,17 @@ def init_tables():
     try:
         if conn:
             with conn.cursor() as curs:
-                curs.execute("SELECT * from information_schema.tables where table_name=%s", ('carousel_stats',))
-                if not bool(curs.rowcount):
-                    curs.execute('CREATE TABLE carousel_stats (id Serial, timestamp TIMESTAMP, current_speed float8, dropsAmount INT, rotationAmount INT, vaccinationAmount1 INT, vaccinationAmount2 INT, startFlag boolean, sessionFlag boolean)')
+                curs.execute('CREATE TABLE IF NOT EXISTS carousel_stats (id Serial, timestamp TIMESTAMP, current_speed float8, dropsAmount INT, rotationAmount INT, vaccinationAmount1 INT, vaccinationAmount2 INT, startFlag boolean, sessionFlag boolean, sessionNum INT)')
+                curs.execute('SELECT * FROM carousel_stats ORDER BY id DESC LIMIT 1')
+                rows = curs.fetchall()
+                if len(rows) == 0:
+                    curs.execute('INSERT INTO carousel_stats (timestamp, current_speed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag, sessionNum) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (datetime.now(), 0, 0, 0, 0, 0, False, False, 0))
                     conn.commit()
-                curs.execute("SELECT * from information_schema.tables where table_name=%s", ('carousel_settings',))
-                if not bool(curs.rowcount):
-                    curs.execute('CREATE TABLE carousel_settings (id Serial, timestamp TIMESTAMP, rotDir text, targetSpeed float8, vacPos1 INT, vacPos2 INT, pusher text)')
+        
+                curs.execute('CREATE TABLE IF NOT EXISTS carousel_settings (id Serial, timestamp TIMESTAMP, rotDir text, targetSpeed float8, vacPos1 INT, vacPos2 INT, pusher text)')                
+                curs.execute('SELECT * FROM carousel_settings ORDER BY id DESC LIMIT 1')
+                rows = curs.fetchall()
+                if len(rows) == 0:
                     curs.execute('INSERT INTO carousel_settings (timestamp, rotDir, targetSpeed, vacPos1, vacPos2, pusher) VALUES (%s, %s, %s, %s, %s, %s)', (datetime.now(), 'Counterclockwise', 1.8, 2, 3, 'Drop all'))
                     conn.commit()
             return 0
@@ -56,11 +61,11 @@ def update_settings(rotDir, targetSpeed, vacPos1, vacPos2, pusher):
     except:
         return 1
     
-def update_stats(currentSpeed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag):
+def update_stats(currentSpeed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag, sessionNum):
     try:
         if conn:
             with conn.cursor() as curs:
-                curs.execute('INSERT INTO carousel_stats (timestamp, current_speed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)', (datetime.now(), currentSpeed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag))
+                curs.execute('INSERT INTO carousel_stats (timestamp, current_speed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag, sessionNum) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)', (datetime.now(), currentSpeed, dropsAmount, rotationAmount, vaccinationAmount1, vaccinationAmount2, startFlag, sessionFlag, sessionNum))
                 conn.commit()
                 return 0
         return 'NO CONNECTION (UPDATE STATS)'
@@ -90,7 +95,7 @@ def read_settings():
         return []
 
 def loadConfig():
-    global config, fullDict
+    global config, fullDict, sessionPrev
     
     tempList = read_settings()[0]
     fullDict['rotDir'] = tempList[2]
@@ -99,26 +104,66 @@ def loadConfig():
     fullDict['vacPos2'] = tempList[5]
     fullDict['pusher'] = tempList[6]
 
-    tempList = read_stats()[0]
-    fullDict['startFlag'] = tempList[7]
-    fullDict['sessionFlag'] = tempList[8]
-
-    with open(config, "r") as file:
-        # fullDict = yaml.safe_load(file)
-        print(fullDict)
+    tempList = read_stats()
+    print(tempList)
+    if len(tempList) == 0:
+        fullDict['dropsAmount'] = 0
+        fullDict['rotationAmount'] = 0
+        fullDict['vaccinationAmount1'] = 0
+        fullDict['vaccinationAmount2'] = 0
+        fullDict['startFlag'] = False
+        fullDict['sessionFlag'] = False
+        fullDict['sessionNum'] = 0
+    else:
+        tempList = tempList[0]
+        fullDict['startFlag'] = tempList[7]
+        fullDict['sessionFlag'] = tempList[8]
+        fullDict['sessionNum'] = tempList[9]
     
-connect_to_db()
-init_tables()
+    print(sessionPrev)
+    if sessionPrev and not fullDict['sessionFlag']:
+        fullDict['sessionNum'] = fullDict['sessionNum'] + 1
+        fullDictOffset['dropsAmount'] = - fullDict['dropsAmount']
+        fullDictOffset['vaccinationAmount1'] = - fullDict['vaccinationAmount1']
+        fullDictOffset['vaccinationAmount2'] = - fullDict['vaccinationAmount2']
+        fullDictOffset['rotationAmount'] = - fullDict['rotationAmount']
+
+    sessionPrev = fullDict['sessionFlag']
 
 if len(fullDict) == 0:
-    loadConfig()
-    tempList = read_stats()[0]
-    fullDict['dropsAmount'] = tempList[3]
-    fullDict['rotationAmount'] = tempList[4]
-    fullDict['vaccinationAmount1'] = tempList[5]
-    fullDict['vaccinationAmount2'] = tempList[6]
-    fullDict['startFlag'] = tempList[7]
-    fullDict['sessionFlag'] = tempList[8]
+    connect_to_db()
+    print(init_tables())
+    tempList = read_settings()[0]
+    fullDict['rotDir'] = tempList[2]
+    fullDict['targetSpeed'] = tempList[3]
+    fullDict['vacPos1'] = tempList[4]
+    fullDict['vacPos2'] = tempList[5]
+    fullDict['pusher'] = tempList[6]
+
+    tempList = read_stats()
+    if len(tempList) == 0:
+        fullDict['currentSpeed'] = 0
+        fullDict['dropsAmount'] = 0
+        fullDict['rotationAmount'] = 0
+        fullDict['vaccinationAmount1'] = 0
+        fullDict['vaccinationAmount2'] = 0
+        fullDict['startFlag'] = False
+        fullDict['sessionFlag'] = False
+        fullDict['sessionNum'] = 0
+    else:
+        tempList = tempList[0]
+        fullDict['currentSpeed'] = 0
+        fullDict['dropsAmount'] = tempList[3]
+        fullDict['rotationAmount'] = tempList[4]
+        fullDict['vaccinationAmount1'] = tempList[5]
+        fullDict['vaccinationAmount2'] = tempList[6]
+        fullDict['startFlag'] = False
+        fullDict['sessionFlag'] = tempList[8]
+        fullDict['sessionNum'] = tempList[9]
+    
+    update_stats(fullDict['currentSpeed'], fullDict['dropsAmount'], fullDict['rotationAmount'], fullDict['vaccinationAmount1'], fullDict['vaccinationAmount2'], fullDict['startFlag'], fullDict['sessionFlag'], fullDict['sessionNum'] )
+    sessionPrev = fullDict['sessionFlag']
+
 
 if (fullDict['sessionFlag']):
     fullDictOffset['dropsAmount'] = fullDict['dropsAmount']
@@ -244,7 +289,7 @@ if __name__ == '__main__':
     while not rospy.is_shutdown():
         try:
             node.sendConfig()
-            update_stats(fullDict['currentSpeed'], fullDict['dropsAmount'] + fullDictOffset['dropsAmount'], fullDict['rotationAmount'] + fullDictOffset['rotationAmount'], fullDict['vaccinationAmount1'] + fullDictOffset['vaccinationAmount1'], fullDict['vaccinationAmount2'] + fullDictOffset['vaccinationAmount2'], fullDict['startFlag'], fullDict['sessionFlag'] )
+            update_stats(fullDict['currentSpeed'], fullDict['dropsAmount'] + fullDictOffset['dropsAmount'], fullDict['rotationAmount'] + fullDictOffset['rotationAmount'], fullDict['vaccinationAmount1'] + fullDictOffset['vaccinationAmount1'], fullDict['vaccinationAmount2'] + fullDictOffset['vaccinationAmount2'], fullDict['startFlag'], fullDict['sessionFlag'], fullDict['sessionNum'] )
 
             rate.sleep()
         except:
