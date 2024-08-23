@@ -103,6 +103,7 @@ def loadConfig():
     fullDict['vacPos1'] = tempList[4]
     fullDict['vacPos2'] = tempList[5]
     fullDict['pusher'] = tempList[6]
+    fullDict['control'] = tempList[7]
 
     tempList = read_stats()
     print(tempList)
@@ -139,6 +140,7 @@ if len(fullDict) == 0:
     fullDict['vacPos1'] = tempList[4]
     fullDict['vacPos2'] = tempList[5]
     fullDict['pusher'] = tempList[6]
+    fullDict['control'] = tempList[7]
 
     tempList = read_stats()
     if len(tempList) == 0:
@@ -257,10 +259,16 @@ class ConfigManager:
                     target_speed = -fullDict['targetSpeed']
             else:
                 target_speed = 0
+
+            if fullDict['control'] == u'Enabled':
+                vac_pos_1 = fullDict['vacPos1']
+                vac_pos_2 = fullDict['vacPos2']
+                pusher = fullDict['pusher']
+            else:
+                vac_pos_1 = fullDict['vacPos1']
+                vac_pos_2 = fullDict['vacPos2']
+                pusher = u'Drop all'
             
-            vac_pos_1 = fullDict['vacPos1']
-            vac_pos_2 = fullDict['vacPos2']
-            pusher = fullDict['pusher']
 
             pusher_options = {
                 u'Drop none' : 0,
@@ -270,8 +278,8 @@ class ConfigManager:
             }
 
             self.target_speed_pub.publish(target_speed)
-            self.vac_pos_1_pub.publish(vac_pos_1)
-            self.vac_pos_2_pub.publish(vac_pos_2)
+            self.vac_pos_1_pub.publish(vac_pos_1 + 1)
+            self.vac_pos_2_pub.publish(vac_pos_2 + 1)
             self.pusher_pub.publish(pusher_options[pusher])
             # print('out')
 
